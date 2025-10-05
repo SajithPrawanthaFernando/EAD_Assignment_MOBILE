@@ -33,7 +33,8 @@ import com.ead.evcharge.data.local.TokenManager
 
 @Composable
 fun LoginScreen(
-    onLoginSuccess: () -> Unit = {}
+    onLoginSuccess: () -> Unit = {},
+    onNavigateToSignup: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val tokenManager = remember { TokenManager(context) }
@@ -289,24 +290,20 @@ fun LoginScreen(
 
             // Sign Up Section
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "Don't have an account?",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                 )
-                TextButton(
-                    onClick = { /* Navigate to sign up */ },
-                    enabled = loginState !is LoginState.Loading
-                ) {
+                Spacer(modifier = Modifier.width(4.dp))
+                TextButton(onClick = onNavigateToSignup) {
                     Text(
                         text = "Sign Up",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = MaterialTheme.colorScheme.primary
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
