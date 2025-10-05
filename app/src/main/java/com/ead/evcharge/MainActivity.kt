@@ -13,20 +13,30 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.ead.evcharge.data.local.TokenManager
+import com.ead.evcharge.navigation.MainNavGraph
+import com.ead.evcharge.navigation.Screen
+import com.ead.evcharge.navigation.getStartDestinationForRole
 import com.ead.evcharge.ui.login.LoginScreen
-import com.ead.evcharge.ui.home.HomeScreen
 import com.ead.evcharge.ui.theme.EVChargeTheme
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private lateinit var tokenManager: TokenManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        tokenManager = TokenManager(this)
+
         setContent {
             EVChargeTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    AppNavigation()
+                    AppNavigation(tokenManager)
                 }
             }
         }
@@ -34,33 +44,86 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun AppNavigation() {
+fun AppNavigation(tokenManager: TokenManager) {
     val navController = rememberNavController()
+    val scope = rememberCoroutineScope()
+
+    // Check if user is already logged in
+    var isLoading by remember { mutableStateOf(true) }
+    var isAuthenticated by remember { mutableStateOf(false) }
+    var startDestination by remember { mutableStateOf("login") }
+
+    LaunchedEffect(Unit) {
+        val token = tokenManager.getToken().first()
+        isAuthenticated = !token.isNullOrEmpty()
+
+        startDestination = if (isAuthenticated) {
+            "main"
+        } else {
+            "login"
+        }
+
+        isLoading = false
+    }
+
+    // Show loading screen while checking authentication
+    if (isLoading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
+        return
+    }
 
     NavHost(
         navController = navController,
-        startDestination = "login"
+        startDestination = startDestination
     ) {
         composable("login") {
             LoginScreen(
                 onLoginSuccess = {
-                    // Navigate to home and remove login from back stack
-                    navController.navigate("home") {
+                    // Navigate to main screen after login
+                    navController.navigate("main") {
                         popUpTo("login") { inclusive = true }
                     }
                 }
             )
         }
 
-        composable("home") {
-            HomeScreen(
-                onLogout = {
-                    // Navigate back to login and remove home from back stack
-                    navController.navigate("login") {
-                        popUpTo("home") { inclusive = true }
+        composable("main") {
+            // Get user role and show appropriate screens
+            var userRole by remember { mutableStateOf("") }
+            var roleBasedStartDest by remember { mutableStateOf("") }
+
+            LaunchedEffect(Unit) {
+                userRole = tokenManager.getUserRole().first() ?: "owner"
+                roleBasedStartDest = getStartDestinationForRole(userRole)
+            }
+
+            if (roleBasedStartDest.isNotEmpty()) {
+                MainNavGraph(
+                    tokenManager = tokenManager,
+                    startDestination = roleBasedStartDest,
+                    userRole = userRole,
+                    onLogout = {
+                        scope.launch {
+                            tokenManager.clearToken()
+                            navController.navigate("login") {
+                                popUpTo("main") { inclusive = true }
+                            }
+                        }
                     }
+                )
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
                 }
-            )
+            }
         }
     }
 }
