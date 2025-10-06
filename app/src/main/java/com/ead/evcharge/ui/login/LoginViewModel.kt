@@ -3,10 +3,12 @@ package com.ead.evcharge.ui.login
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ead.evcharge.data.local.AppDatabase
 import com.ead.evcharge.data.local.TokenManager
 import com.ead.evcharge.data.model.LoginRequest
 import com.ead.evcharge.data.remote.ApiService
 import com.ead.evcharge.data.remote.RetrofitInstance
+import com.ead.evcharge.data.repository.UserRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +23,8 @@ sealed class LoginState {
 }
 
 class LoginViewModel(
-    private val tokenManager: TokenManager
+    private val tokenManager: TokenManager,
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
     private val _loginState = MutableStateFlow<LoginState>(LoginState.Idle)
@@ -52,34 +55,24 @@ class LoginViewModel(
                 if (response.isSuccessful) {
                     response.body()?.let { loginResponse ->
                         val token = loginResponse.token
-                        println("Token: ${loginResponse.token}")
+                        println("Login successful!")
+                        println("Token: $token")
 
+                        tokenManager.saveToken(token)
                         try {
-                            val jwt = JWT(token)
+                            val userEntity = userRepository.saveUserFromToken(token)
 
-                            // Extract claims from JWT
-                            val userId = jwt.getClaim("sub").asString()
-                                ?: jwt.getClaim("id").asString()
-                                ?: jwt.subject
-                                ?: ""
+                            if (userEntity != null) {
+                                // Also save to TokenManager for backward compatibility
+                                tokenManager.saveUserId(userEntity.userId)
+                                tokenManager.saveUserEmail(userEntity.email)
+                                tokenManager.saveUserRole(userEntity.role)
 
-                            val userEmail = jwt.getClaim("email").asString() ?: email
-
-                            val userRole = jwt.getClaim("http://schemas.microsoft.com/ws/2008/06/identity/claims/role").asString()
-                                ?: jwt.getClaim("roles").asString()
-                                ?: ""
-                            println("userRole: ${userRole}")
-                            println("userEmail: ${userEmail}")
-                            println("userId: ${userId}")
-                            // Save all data to DataStore
-                            tokenManager.saveToken(token)
-                            tokenManager.saveUserId(userId)
-                            tokenManager.saveUserEmail(userEmail)
-                            tokenManager.saveUserRole(userRole)
-
-
-
-                            _loginState.value = LoginState.Success(token)
+                                println("User data saved to Room and TokenManager")
+                                _loginState.value = LoginState.Success(token)
+                            } else {
+                                _loginState.value = LoginState.Error("Failed to save user data")
+                            }
 
                         } catch (e: com.auth0.android.jwt.DecodeException) {
                             _loginState.value = LoginState.Error("Failed to decode token")

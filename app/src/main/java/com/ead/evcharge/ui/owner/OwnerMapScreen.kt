@@ -1,11 +1,14 @@
 // ui/owner/OwnerMapScreen.kt
 package com.ead.evcharge.ui.owner
+
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -13,14 +16,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 // Dummy data for charging stations
 data class ChargingStation(
@@ -39,14 +45,60 @@ data class ChargingStation(
 @Composable
 fun OwnerMapScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-    // Dummy charging stations (You can replace with real data later)
+    // Location permission state
+    var hasLocationPermission by remember { mutableStateOf(false) }
+    var currentLocation by remember { mutableStateOf<LatLng?>(null) }
+
+    // Request location permission
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        hasLocationPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
+        if (hasLocationPermission) {
+            Toast.makeText(context, "Location permission granted", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Location permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Request permission on first launch
+    LaunchedEffect(Unit) {
+        locationPermissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        )
+    }
+
+    // Get current location
+    suspend fun getCurrentLocation(): LatLng? {
+        return try {
+            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+            val location = fusedLocationClient.lastLocation.await()
+            location?.let {
+                LatLng(it.latitude, it.longitude)
+            }
+        } catch (e: SecurityException) {
+            Toast.makeText(context, "Location permission required", Toast.LENGTH_SHORT).show()
+            null
+        } catch (e: Exception) {
+            Toast.makeText(context, "Failed to get location: ${e.message}", Toast.LENGTH_SHORT).show()
+            null
+        }
+    }
+
+    // Dummy charging stations
     val chargingStations = remember {
         listOf(
             ChargingStation(
                 id = "1",
                 name = "Central Charging Hub",
-                location = LatLng(6.9271, 79.8612), // Colombo
+                location = LatLng(6.9271, 79.8612),
                 address = "123 Main Street, Colombo",
                 availableSlots = 3,
                 totalSlots = 5,
@@ -90,7 +142,7 @@ fun OwnerMapScreen() {
         )
     }
 
-    // Center camera on user location (using Colombo as default)
+    // Camera position state
     val defaultLocation = LatLng(6.9271, 79.8612)
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(defaultLocation, 13f)
@@ -119,13 +171,18 @@ fun OwnerMapScreen() {
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
                 properties = MapProperties(
-                    isMyLocationEnabled = false,
+                    isMyLocationEnabled = hasLocationPermission,
                     mapType = MapType.NORMAL
                 ),
                 uiSettings = MapUiSettings(
                     zoomControlsEnabled = false,
-                    myLocationButtonEnabled = true
-                )
+                    myLocationButtonEnabled = false,
+                    compassEnabled = true
+                ),
+                onMapClick = {
+                    // Dismiss station details when clicking on map
+                    selectedStation = null
+                }
             ) {
                 // Add markers for each charging station
                 chargingStations.forEach { station ->
@@ -135,39 +192,108 @@ fun OwnerMapScreen() {
                         snippet = "${station.availableSlots}/${station.totalSlots} slots available",
                         onClick = {
                             selectedStation = station
+                            // Animate camera to the selected station
+                            scope.launch {
+                                cameraPositionState.animate(
+                                    CameraUpdateFactory.newLatLngZoom(station.location, 15f),
+                                    1000
+                                )
+                            }
                             true
                         }
                     )
                 }
+
+                // Show current location marker if available
+                currentLocation?.let { location ->
+                    Marker(
+                        state = MarkerState(position = location),
+                        title = "You are here",
+                        snippet = "Current Location"
+                    )
+                }
             }
 
-            // Station details card when a marker is selected
-            selectedStation?.let { station ->
-                StationDetailsCard(
-                    station = station,
-                    onDismiss = { selectedStation = null },
-                    onNavigate = {
-                        // Open Google Maps for navigation
-                        val uri = Uri.parse(
-                            "google.navigation:q=${station.location.latitude},${station.location.longitude}"
-                        )
-                        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                            setPackage("com.google.android.apps.maps")
+            // Zoom Controls (Top Right)
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+            ) {
+                FloatingActionButton(
+                    onClick = {
+                        scope.launch {
+                            val currentZoom = cameraPositionState.position.zoom
+                            cameraPositionState.animate(
+                                CameraUpdateFactory.zoomTo(currentZoom + 1f),
+                                500
+                            )
                         }
-                        context.startActivity(intent)
                     },
-                    onBook = {
-                        // Handle booking action
-                        // TODO: Navigate to booking screen with station details
-                    }
-                )
+                    modifier = Modifier.size(48.dp),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Zoom In",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                FloatingActionButton(
+                    onClick = {
+                        scope.launch {
+                            val currentZoom = cameraPositionState.position.zoom
+                            if (currentZoom > 2f) {
+                                cameraPositionState.animate(
+                                    CameraUpdateFactory.zoomTo(currentZoom - 1f),
+                                    500
+                                )
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(48.dp),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Zoom Out",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
 
-            // Floating action button for location
+            // My Location Button (Bottom Right)
             FloatingActionButton(
                 onClick = {
-                    // Center map on user location
-                    // TODO: Get actual user location
+                    if (hasLocationPermission) {
+                        scope.launch {
+                            val location = getCurrentLocation()
+                            if (location != null) {
+                                currentLocation = location
+                                cameraPositionState.animate(
+                                    CameraUpdateFactory.newLatLngZoom(location, 15f),
+                                    1000
+                                )
+                                Toast.makeText(
+                                    context,
+                                    "Moved to your location",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    } else {
+                        locationPermissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION
+                            )
+                        )
+                    }
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -178,6 +304,39 @@ fun OwnerMapScreen() {
                     imageVector = Icons.Default.LocationOn,
                     contentDescription = "My Location",
                     tint = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+
+            // Station details card when a marker is selected
+            selectedStation?.let { station ->
+                StationDetailsCard(
+                    station = station,
+                    onDismiss = { selectedStation = null },
+                    onNavigate = {
+                        val uri = Uri.parse(
+                            "google.navigation:q=${station.location.latitude},${station.location.longitude}"
+                        )
+                        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                            setPackage("com.google.android.apps.maps")
+                        }
+                        try {
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(
+                                context,
+                                "Google Maps not installed",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    },
+                    onBook = {
+                        Toast.makeText(
+                            context,
+                            "Booking ${station.name}...",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        // TODO: Navigate to booking screen
+                    }
                 )
             }
         }

@@ -29,7 +29,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ead.evcharge.data.local.AppDatabase
 import com.ead.evcharge.data.local.TokenManager
+import com.ead.evcharge.data.remote.RetrofitInstance
+import com.ead.evcharge.data.repository.UserRepository
 
 @Composable
 fun LoginScreen(
@@ -39,12 +42,17 @@ fun LoginScreen(
     val context = LocalContext.current
     val tokenManager = remember { TokenManager(context) }
 
+    val database = remember { AppDatabase.getDatabase(context) }
+    val userRepository = remember {
+        UserRepository(database.userDao(), RetrofitInstance.api)
+    }
+
     // Create ViewModel with factory
     val viewModel: LoginViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
                 @Suppress("UNCHECKED_CAST")
-                return LoginViewModel(tokenManager) as T
+                return LoginViewModel(tokenManager, userRepository) as T
             }
         }
     )
