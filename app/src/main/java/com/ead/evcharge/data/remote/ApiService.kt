@@ -11,6 +11,9 @@ import com.ead.evcharge.data.model.LoginResponse
 import com.ead.evcharge.data.model.SignupRequest
 import com.ead.evcharge.data.model.SignupResponse
 import com.ead.evcharge.data.model.UserResponse
+import com.ead.evcharge.data.model.StationResponse
+import com.ead.evcharge.data.model.BookingRequest
+import com.ead.evcharge.data.model.BookingResponse
 
 interface ApiService {
     @POST("/api/auth/login")
@@ -20,5 +23,12 @@ interface ApiService {
     suspend fun signup(@Body request: SignupRequest): Response<SignupResponse>
 
     @GET("/api/ev-owners/{nic}")
-    suspend fun getUserDetails(@Path("nic") userId: String): Response<UserResponse>
+    suspend fun getOwnerDetails(@Path("nic") userId: String): Response<UserResponse>
+    @GET("/api/users/{id}")
+    suspend fun getUserDetails(@Path("id") userId: String): Response<UserResponse>
+    @GET("/api/stations")
+    suspend fun getAllStations(): Response<List<StationResponse>>
+
+    @POST("/api/bookings")
+    suspend fun createBooking(@Body request: BookingRequest): Response<BookingResponse>
 }

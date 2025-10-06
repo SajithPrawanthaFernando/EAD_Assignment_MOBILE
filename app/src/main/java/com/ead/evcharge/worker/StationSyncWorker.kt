@@ -4,28 +4,26 @@ import android.content.Context
 import android.util.Log
 import androidx.work.*
 import com.ead.evcharge.data.local.AppDatabase
-import com.ead.evcharge.data.local.TokenManager
 import com.ead.evcharge.data.remote.RetrofitInstance
-import com.ead.evcharge.data.repository.UserRepository
-import kotlinx.coroutines.flow.first
+import com.ead.evcharge.data.repository.StationRepository
 import java.util.concurrent.TimeUnit
 
-class UserSyncWorker(
+class StationSyncWorker(
     context: Context,
     params: WorkerParameters
 ) : CoroutineWorker(context, params) {
 
     companion object {
-        private const val TAG = "UserSyncWorker"
-        const val WORK_NAME = "user_sync_work"
+        private const val TAG = "StationSyncWorker"
+        const val WORK_NAME = "station_sync_work"
 
         fun scheduleSync(context: Context) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
 
-            val syncRequest = PeriodicWorkRequestBuilder<UserSyncWorker>(
-                15, TimeUnit.MINUTES // Sync every 15 minutes when online
+            val syncRequest = PeriodicWorkRequestBuilder<StationSyncWorker>(
+                30, TimeUnit.MINUTES // Sync every 30 minutes
             )
                 .setConstraints(constraints)
                 .setBackoffCriteria(
@@ -41,43 +39,34 @@ class UserSyncWorker(
                 syncRequest
             )
 
-            Log.d(TAG, "User sync scheduled")
+            Log.d(TAG, "Station sync scheduled")
         }
 
         fun cancelSync(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
-            Log.d(TAG, "User sync cancelled")
+            Log.d(TAG, "Station sync cancelled")
         }
     }
 
     override suspend fun doWork(): Result {
         return try {
-            Log.d(TAG, "Starting user sync...")
+            Log.d(TAG, "Starting station sync...")
 
-            val tokenManager = TokenManager(applicationContext)
             val database = AppDatabase.getDatabase(applicationContext)
-            val repository = UserRepository(database.userDao(), RetrofitInstance.api, tokenManager)
+            val repository = StationRepository(database.stationDao(), RetrofitInstance.api)
 
-            // Get userId from TokenManager
-            val userId = tokenManager.getUserId().first()
-
-            if (userId.isNullOrEmpty()) {
-                Log.w(TAG, "No user ID found, skipping sync")
-                return Result.success()
-            }
-
-            // Sync user from server
-            val result = repository.syncUserFromServer(userId)
+            val result = repository.syncStationsFromServer()
 
             if (result.isSuccess) {
-                Log.d(TAG, "User sync completed successfully")
+                val stations = result.getOrNull()
+                Log.d(TAG, "Station sync completed: ${stations?.size ?: 0} stations")
                 Result.success()
             } else {
-                Log.e(TAG, "User sync failed: ${result.exceptionOrNull()?.message}")
+                Log.e(TAG, "Station sync failed: ${result.exceptionOrNull()?.message}")
                 Result.retry()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error during user sync: ${e.message}", e)
+            Log.e(TAG, "Error during station sync: ${e.message}", e)
             Result.retry()
         }
     }
