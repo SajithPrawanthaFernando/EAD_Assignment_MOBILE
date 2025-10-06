@@ -4,7 +4,7 @@ data class UserResponse(
     val userId: String,
     val name: String,
     val email: String,
-    val nic: String,
+    val ownerNic: String,
     val phone: String,
     val role: String,
     val createdAt: String? = null,

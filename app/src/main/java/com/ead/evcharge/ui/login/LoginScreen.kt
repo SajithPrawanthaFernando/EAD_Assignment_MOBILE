@@ -44,7 +44,7 @@ fun LoginScreen(
 
     val database = remember { AppDatabase.getDatabase(context) }
     val userRepository = remember {
-        UserRepository(database.userDao(), RetrofitInstance.api)
+        UserRepository(database.userDao(), RetrofitInstance.api,tokenManager)
     }
 
     // Create ViewModel with factory

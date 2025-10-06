@@ -7,7 +7,6 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,26 +19,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.ead.evcharge.data.local.AppDatabase
+import com.ead.evcharge.data.local.TokenManager
+import com.ead.evcharge.data.local.entity.StationEntity
+import com.ead.evcharge.data.model.BookingRequest
+import com.ead.evcharge.data.remote.RetrofitInstance
+import com.ead.evcharge.data.repository.StationRepository
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
-
-// Dummy data for charging stations
-data class ChargingStation(
-    val id: String,
-    val name: String,
-    val location: LatLng,
-    val address: String,
-    val availableSlots: Int,
-    val totalSlots: Int,
-    val chargingSpeed: String,
-    val pricePerHour: Double,
-    val rating: Float
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,9 +38,29 @@ fun OwnerMapScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Location permission state
+    // Setup repository and token manager
+    val database = remember { AppDatabase.getDatabase(context) }
+    val stationRepository = remember {
+        StationRepository(database.stationDao(), RetrofitInstance.api)
+    }
+    val tokenManager = remember { TokenManager(context) }
+    val userNic by tokenManager.getUserNic().collectAsState(initial = null)
+
+    // Get stations from database
+    val stations by stationRepository.getActiveStations().collectAsState(initial = emptyList())
+
+    // Sync stations on first load
+    LaunchedEffect(Unit) {
+        stationRepository.syncStationsFromServer()
+    }
+
+    // State variables
     var hasLocationPermission by remember { mutableStateOf(false) }
     var currentLocation by remember { mutableStateOf<LatLng?>(null) }
+    var isSyncing by remember { mutableStateOf(false) }
+    var selectedStation by remember { mutableStateOf<StationEntity?>(null) }
+    var showBookingDialog by remember { mutableStateOf(false) }
+    var bookingStation by remember { mutableStateOf<StationEntity?>(null) }
 
     // Request location permission
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -57,15 +68,8 @@ fun OwnerMapScreen() {
     ) { permissions ->
         hasLocationPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-
-        if (hasLocationPermission) {
-            Toast.makeText(context, "Location permission granted", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(context, "Location permission denied", Toast.LENGTH_SHORT).show()
-        }
     }
 
-    // Request permission on first launch
     LaunchedEffect(Unit) {
         locationPermissionLauncher.launch(
             arrayOf(
@@ -75,89 +79,88 @@ fun OwnerMapScreen() {
         )
     }
 
-    // Get current location
-    suspend fun getCurrentLocation(): LatLng? {
-        return try {
-            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
-            val location = fusedLocationClient.lastLocation.await()
-            location?.let {
-                LatLng(it.latitude, it.longitude)
+    // Get current location function
+    fun getCurrentLocation(onLocationReceived: (LatLng) -> Unit) {
+        try {
+            if (!hasLocationPermission) {
+                Toast.makeText(context, "Location permission required", Toast.LENGTH_SHORT).show()
+                return
             }
+
+            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+            fusedLocationClient.lastLocation
+                .addOnSuccessListener { location ->
+                    if (location != null) {
+                        val latLng = LatLng(location.latitude, location.longitude)
+                        onLocationReceived(latLng)
+                    } else {
+                        Toast.makeText(context, "Unable to get location", Toast.LENGTH_SHORT).show()
+                    }
+                }
         } catch (e: SecurityException) {
             Toast.makeText(context, "Location permission required", Toast.LENGTH_SHORT).show()
-            null
-        } catch (e: Exception) {
-            Toast.makeText(context, "Failed to get location: ${e.message}", Toast.LENGTH_SHORT).show()
-            null
         }
     }
 
-    // Dummy charging stations
-    val chargingStations = remember {
-        listOf(
-            ChargingStation(
-                id = "1",
-                name = "Central Charging Hub",
-                location = LatLng(6.9271, 79.8612),
-                address = "123 Main Street, Colombo",
-                availableSlots = 3,
-                totalSlots = 5,
-                chargingSpeed = "Fast Charge (50kW)",
-                pricePerHour = 500.0,
-                rating = 4.5f
-            ),
-            ChargingStation(
-                id = "2",
-                name = "Mall Parking Station",
-                location = LatLng(6.9319, 79.8478),
-                address = "456 Shopping Center, Colombo 03",
-                availableSlots = 0,
-                totalSlots = 4,
-                chargingSpeed = "Standard (22kW)",
-                pricePerHour = 300.0,
-                rating = 4.2f
-            ),
-            ChargingStation(
-                id = "3",
-                name = "Airport Fast Charge",
-                location = LatLng(6.9167, 79.8667),
-                address = "789 Airport Road",
-                availableSlots = 2,
-                totalSlots = 6,
-                chargingSpeed = "Ultra Fast (150kW)",
-                pricePerHour = 800.0,
-                rating = 4.8f
-            ),
-            ChargingStation(
-                id = "4",
-                name = "Beach Side Charging",
-                location = LatLng(6.9200, 79.8500),
-                address = "Marine Drive",
-                availableSlots = 1,
-                totalSlots = 3,
-                chargingSpeed = "Fast Charge (50kW)",
-                pricePerHour = 450.0,
-                rating = 4.3f
-            )
-        )
-    }
-
-    // Camera position state
+    // Camera position
     val defaultLocation = LatLng(6.9271, 79.8612)
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(defaultLocation, 13f)
     }
 
-    var selectedStation by remember { mutableStateOf<ChargingStation?>(null) }
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Find Charging Stations") },
+                title = {
+                    Column {
+                        Text("Find Charging Stations")
+                        if (stations.isNotEmpty()) {
+                            Text(
+                                "${stations.size} stations available",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                ),
+                actions = {
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                isSyncing = true
+                                val result = stationRepository.syncStationsFromServer()
+                                isSyncing = false
+
+                                if (result.isSuccess) {
+                                    Toast.makeText(context, "Stations updated", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Sync failed: ${result.exceptionOrNull()?.message}",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        },
+                        enabled = !isSyncing
+                    ) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh Stations",
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                    }
+                }
             )
         }
     ) { padding ->
@@ -179,23 +182,22 @@ fun OwnerMapScreen() {
                     myLocationButtonEnabled = false,
                     compassEnabled = true
                 ),
-                onMapClick = {
-                    // Dismiss station details when clicking on map
-                    selectedStation = null
-                }
+                onMapClick = { selectedStation = null }
             ) {
                 // Add markers for each charging station
-                chargingStations.forEach { station ->
+                stations.forEach { station ->
                     Marker(
-                        state = MarkerState(position = station.location),
+                        state = MarkerState(position = LatLng(station.lat, station.lng)),
                         title = station.name,
-                        snippet = "${station.availableSlots}/${station.totalSlots} slots available",
+                        snippet = "${station.slots.count { it.available }}/${station.slots.size} available • ${station.type}",
                         onClick = {
                             selectedStation = station
-                            // Animate camera to the selected station
                             scope.launch {
                                 cameraPositionState.animate(
-                                    CameraUpdateFactory.newLatLngZoom(station.location, 15f),
+                                    CameraUpdateFactory.newLatLngZoom(
+                                        LatLng(station.lat, station.lng),
+                                        15f
+                                    ),
                                     1000
                                 )
                             }
@@ -204,17 +206,16 @@ fun OwnerMapScreen() {
                     )
                 }
 
-                // Show current location marker if available
+                // Current location marker
                 currentLocation?.let { location ->
                     Marker(
                         state = MarkerState(position = location),
-                        title = "You are here",
-                        snippet = "Current Location"
+                        title = "You are here"
                     )
                 }
             }
 
-            // Zoom Controls (Top Right)
+            // Zoom Controls
             Column(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -231,14 +232,9 @@ fun OwnerMapScreen() {
                         }
                     },
                     modifier = Modifier.size(48.dp),
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
+                    containerColor = MaterialTheme.colorScheme.surface
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Zoom In",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
+                    Icon(Icons.Default.Add, "Zoom In", tint = MaterialTheme.colorScheme.onSurface)
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -256,35 +252,25 @@ fun OwnerMapScreen() {
                         }
                     },
                     modifier = Modifier.size(48.dp),
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
+                    containerColor = MaterialTheme.colorScheme.surface
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Zoom Out",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
+                    Icon(Icons.Default.Close, "Zoom Out", tint = MaterialTheme.colorScheme.onSurface)
                 }
             }
 
-            // My Location Button (Bottom Right)
+            // My Location Button
             FloatingActionButton(
                 onClick = {
                     if (hasLocationPermission) {
-                        scope.launch {
-                            val location = getCurrentLocation()
-                            if (location != null) {
-                                currentLocation = location
+                        getCurrentLocation { location ->
+                            currentLocation = location
+                            scope.launch {
                                 cameraPositionState.animate(
                                     CameraUpdateFactory.newLatLngZoom(location, 15f),
                                     1000
                                 )
-                                Toast.makeText(
-                                    context,
-                                    "Moved to your location",
-                                    Toast.LENGTH_SHORT
-                                ).show()
                             }
+                            Toast.makeText(context, "Moved to your location", Toast.LENGTH_SHORT).show()
                         }
                     } else {
                         locationPermissionLauncher.launch(
@@ -300,56 +286,92 @@ fun OwnerMapScreen() {
                     .padding(16.dp),
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = "My Location",
-                    tint = MaterialTheme.colorScheme.onPrimary
-                )
+                Icon(Icons.Default.LocationOn, "My Location", tint = MaterialTheme.colorScheme.onPrimary)
             }
 
-            // Station details card when a marker is selected
+            // Station details card
             selectedStation?.let { station ->
-                StationDetailsCard(
+                RealStationDetailsCard(
                     station = station,
                     onDismiss = { selectedStation = null },
                     onNavigate = {
-                        val uri = Uri.parse(
-                            "google.navigation:q=${station.location.latitude},${station.location.longitude}"
-                        )
+                        val uri = Uri.parse("google.navigation:q=${station.lat},${station.lng}")
                         val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                             setPackage("com.google.android.apps.maps")
                         }
                         try {
                             context.startActivity(intent)
                         } catch (e: Exception) {
-                            Toast.makeText(
-                                context,
-                                "Google Maps not installed",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            Toast.makeText(context, "Google Maps not installed", Toast.LENGTH_SHORT).show()
                         }
                     },
                     onBook = {
-                        Toast.makeText(
-                            context,
-                            "Booking ${station.name}...",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        // TODO: Navigate to booking screen
+                        bookingStation = station
+                        showBookingDialog = true
+                        selectedStation = null
                     }
                 )
             }
         }
     }
+
+    // Booking Dialog
+    if (showBookingDialog && bookingStation != null && userNic != null) {
+        BookingDialog(
+            station = bookingStation!!,
+            ownerNic = userNic!!,
+            onDismiss = {
+                showBookingDialog = false
+                bookingStation = null
+            },
+            onConfirm = { slotId, startTimeUtc ->
+                scope.launch {
+                    try {
+                        val response = RetrofitInstance.api.createBooking(
+                            BookingRequest(
+                                ownerNic = userNic!!,
+                                stationId = bookingStation!!.id,
+                                slotId = slotId,
+                                startTimeUtc = startTimeUtc
+                            )
+                        )
+
+                        if (response.isSuccessful) {
+                            Toast.makeText(context, "Booking confirmed!", Toast.LENGTH_LONG).show()
+                            showBookingDialog = false
+                            bookingStation = null
+                            // Refresh stations to update availability
+                            stationRepository.syncStationsFromServer()
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Booking failed: ${response.message()}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(
+                            context,
+                            "Error: ${e.message}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
+        )
+    }
 }
 
 @Composable
-fun StationDetailsCard(
-    station: ChargingStation,
+fun RealStationDetailsCard(
+    station: StationEntity,
     onDismiss: () -> Unit,
     onNavigate: () -> Unit,
     onBook: () -> Unit
 ) {
+    val availableSlots = station.slots.count { it.available }
+    val totalSlots = station.slots.size
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -361,15 +383,10 @@ fun StationDetailsCard(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
+            shape = RoundedCornerShape(20.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp)
-            ) {
-                // Header with close button
+            Column(modifier = Modifier.padding(20.dp)) {
+                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -385,45 +402,23 @@ fun StationDetailsCard(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(top = 4.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Star,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = Color(0xFFFFC107)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "${station.rating}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
+                            Surface(
+                                color = if (station.active) Color(0xFF4CAF50) else Color(0xFFE57373),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = if (station.active) "Active" else "Inactive",
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White
+                                )
+                            }
                         }
                     }
 
                     IconButton(onClick = onDismiss) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close"
-                        )
+                        Icon(Icons.Default.Close, "Close")
                     }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Address
-                Row(verticalAlignment = Alignment.Top) {
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = station.address,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -435,41 +430,14 @@ fun StationDetailsCard(
                 ) {
                     InfoChip(
                         icon = Icons.Default.List,
-                        text = "${station.availableSlots}/${station.totalSlots} Available",
-                        isAvailable = station.availableSlots > 0
+                        text = "$availableSlots/$totalSlots available",
+                        isAvailable = availableSlots > 0
                     )
                     InfoChip(
                         icon = Icons.Default.Phone,
-                        text = station.chargingSpeed,
+                        text = station.type,
                         isAvailable = true
                     )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Price
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Rs. ${station.pricePerHour}/hour",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -484,11 +452,7 @@ fun StationDetailsCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.LocationOn,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Icon(Icons.Default.LocationOn, null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Navigate")
                     }
@@ -497,13 +461,9 @@ fun StationDetailsCard(
                         onClick = onBook,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
-                        enabled = station.availableSlots > 0
+                        enabled = station.active && availableSlots > 0
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Book Now")
                     }

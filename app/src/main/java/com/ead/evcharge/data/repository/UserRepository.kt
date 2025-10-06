@@ -3,6 +3,7 @@ package com.ead.evcharge.data.repository
 
 import android.util.Log
 import com.auth0.android.jwt.JWT
+import com.ead.evcharge.data.local.TokenManager
 import com.ead.evcharge.data.local.dao.UserDao
 import com.ead.evcharge.data.local.entity.UserEntity
 import com.ead.evcharge.data.model.UserResponse
@@ -14,7 +15,8 @@ import java.net.SocketTimeoutException
 
 class UserRepository(
     private val userDao: UserDao,
-    private val apiService: ApiService
+    private val apiService: ApiService,
+    private val tokenManager: TokenManager,
 ) {
 
     companion object {
@@ -41,7 +43,7 @@ class UserRepository(
     }
 
     // Extract user data from JWT and save to Room
-    suspend fun saveUserFromToken(token: String): UserEntity? {
+    suspend fun    saveUserFromToken(token: String): UserEntity? {
         return try {
             val jwt = JWT(token)
             val userId = jwt.getClaim("userId").asString()
@@ -49,11 +51,40 @@ class UserRepository(
                 ?: jwt.subject
                 ?: return null
 
+
             val email = jwt.getClaim("email").asString() ?: ""
             val name = jwt.getClaim("name").asString() ?: ""
-            val nic = jwt.getClaim("nic").asString() ?: ""
+            var nic = jwt.getClaim("nic").asString() ?: ""
             val phone = jwt.getClaim("phone").asString() ?: ""
-            val role = jwt.getClaim("role").asString() ?: ""
+            val role = jwt.getClaim("http://schemas.microsoft.com/ws/2008/06/identity/claims/role").asString() ?: ""
+
+
+            println("+++++++++++++++++++++++++++++++hihhii")
+            println(role)
+            if (role.equals("EVOwner", ignoreCase = true)) {
+                Log.d(TAG, "Role is EVOwner, fetching NIC from API for userId: $userId")
+
+                try {
+                    val response = apiService.getUserDetails(userId)
+
+                    if (response.isSuccessful) {
+                        response.body()?.let { userResponse ->
+                            nic = userResponse.ownerNic
+
+                            tokenManager.saveUserNic(nic)
+                            Log.d(TAG, "NIC fetched from API: $nic")
+                        } ?: Log.w(TAG, "Empty response body when fetching user details")
+                    } else {
+                        Log.w(
+                            TAG,
+                            "Failed to fetch user details: ${response.code()} - ${response.message()}"
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error fetching user details from API: ${e.message}", e)
+                    // Continue with NIC from token (if available)
+                }
+            }
 
             val userEntity = UserEntity(
                 userId = userId,
@@ -174,7 +205,7 @@ class UserRepository(
             userId = this.userId,
             name = this.name,
             email = this.email,
-            nic = this.nic,
+            nic = this.ownerNic,
             phone = this.phone,
             role = this.role,
             lastSyncTimestamp = System.currentTimeMillis()
