@@ -16,7 +16,7 @@
 
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyAQaL_ulDu-7UF-65hMgSMQzKnCKxpyq2k" />
+            android:value="AIzaSyBzoEn-g2cwrNf_lz4iTUpPwPC9mB4HyvU" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -32,6 +32,8 @@
     </application>
 
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 
 
 </manifest>

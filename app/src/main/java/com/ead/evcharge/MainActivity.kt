@@ -18,6 +18,7 @@ import com.ead.evcharge.navigation.MainNavGraph
 import com.ead.evcharge.navigation.Screen
 import com.ead.evcharge.navigation.getStartDestinationForRole
 import com.ead.evcharge.ui.login.LoginScreen
+import com.ead.evcharge.ui.signup.SignupScreen
 import com.ead.evcharge.ui.theme.EVChargeTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -88,6 +89,21 @@ fun AppNavigation(tokenManager: TokenManager) {
                     navController.navigate("main") {
                         popUpTo("login") { inclusive = true }
                     }
+                },
+                onNavigateToSignup = {
+                    navController.navigate("signup")
+                }
+            )
+        }
+        composable("signup") {
+            SignupScreen(
+                onSignupSuccess = {
+                    navController.navigate("main") {
+                        popUpTo("signup") { inclusive = true }
+                    }
+                },
+                onNavigateToLogin = {
+                    navController.popBackStack()
                 }
             )
         }

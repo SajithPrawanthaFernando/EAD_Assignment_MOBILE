@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -87,6 +88,19 @@ dependencies {
     // Optional: For location services
     implementation("com.google.android.gms:play-services-location:21.3.0")
 
+    // Room Database
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
+    // WorkManager for background sync
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    // Google Play Services - Location
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    // Add this: Kotlin Coroutines Play Services Tasks
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")

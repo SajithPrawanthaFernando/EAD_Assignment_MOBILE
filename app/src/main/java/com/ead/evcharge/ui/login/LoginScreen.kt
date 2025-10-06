@@ -29,21 +29,30 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ead.evcharge.data.local.AppDatabase
 import com.ead.evcharge.data.local.TokenManager
+import com.ead.evcharge.data.remote.RetrofitInstance
+import com.ead.evcharge.data.repository.UserRepository
 
 @Composable
 fun LoginScreen(
-    onLoginSuccess: () -> Unit = {}
+    onLoginSuccess: () -> Unit = {},
+    onNavigateToSignup: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val tokenManager = remember { TokenManager(context) }
+
+    val database = remember { AppDatabase.getDatabase(context) }
+    val userRepository = remember {
+        UserRepository(database.userDao(), RetrofitInstance.api)
+    }
 
     // Create ViewModel with factory
     val viewModel: LoginViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
                 @Suppress("UNCHECKED_CAST")
-                return LoginViewModel(tokenManager) as T
+                return LoginViewModel(tokenManager, userRepository) as T
             }
         }
     )
@@ -289,24 +298,20 @@ fun LoginScreen(
 
             // Sign Up Section
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "Don't have an account?",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                 )
-                TextButton(
-                    onClick = { /* Navigate to sign up */ },
-                    enabled = loginState !is LoginState.Loading
-                ) {
+                Spacer(modifier = Modifier.width(4.dp))
+                TextButton(onClick = onNavigateToSignup) {
                     Text(
                         text = "Sign Up",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = MaterialTheme.colorScheme.primary
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }

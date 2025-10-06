@@ -96,15 +96,6 @@ fun OwnerHomeScreen(
     )
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("EV Charge") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
-                ),
-            )
-        }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -112,7 +103,7 @@ fun OwnerHomeScreen(
                 .padding(padding)
         ) {
             // Welcome Section
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.primary)
@@ -124,10 +115,10 @@ fun OwnerHomeScreen(
                     color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
                     fontWeight = FontWeight.Medium
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = userName,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimary
                 )
