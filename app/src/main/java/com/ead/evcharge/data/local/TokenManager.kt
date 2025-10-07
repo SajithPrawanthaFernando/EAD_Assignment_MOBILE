@@ -18,6 +18,7 @@ class TokenManager(private val context: Context) {
         private val USER_ID_KEY = stringPreferencesKey("user_id")
         private val USER_EMAIL_KEY = stringPreferencesKey("user_email")
         private val USER_ROLE_KEY = stringPreferencesKey("user_role")
+        private val USER_NIC_KEY = stringPreferencesKey("nic")
     }
 
     suspend fun saveToken(token: String) {
@@ -34,6 +35,12 @@ class TokenManager(private val context: Context) {
     suspend fun saveUserEmail(email: String) {
         context.dataStore.edit { preferences ->
             preferences[USER_EMAIL_KEY] = email
+        }
+    }
+
+    suspend fun saveUserNic(nic: String) {
+        context.dataStore.edit { preferences ->
+            preferences[USER_NIC_KEY] = nic
         }
     }
     suspend fun saveUserRole(role: String) {
@@ -63,6 +70,12 @@ class TokenManager(private val context: Context) {
     fun getUserRole(): Flow<String?> {
         return context.dataStore.data.map { preferences ->
             preferences[USER_ROLE_KEY]
+        }
+    }
+
+    fun getUserNic(): Flow<String?> {
+        return context.dataStore.data.map { preferences ->
+            preferences[USER_NIC_KEY]
         }
     }
 
