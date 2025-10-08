@@ -12,5 +12,7 @@ data class UserEntity(
     val nic: String,
     val phone: String,
     val role: String,
+    val status: String = "active",  // Add status field
+    val isActive: Boolean = true,   // Add active field
     val lastSyncTimestamp: Long = System.currentTimeMillis()
 )

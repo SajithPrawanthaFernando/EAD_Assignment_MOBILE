@@ -53,9 +53,9 @@ sealed class BottomNavItem(
         roles = listOf("owner", "OWNER", "ev_owner", "EV_OWNER", "user", "USER")
     )
 
-    object OwnerVehicles : BottomNavItem(
-        route = Screen.OwnerVehicles.route,
-        title = "My Vehicles",
+    object OwnerBooking : BottomNavItem(
+        route = Screen.OwnerBooking.route,
+        title = "My Bookings",
         icon = Icons.Default.List,
         roles = listOf("owner", "OWNER", "ev_owner", "EV_OWNER", "user", "USER")
     )
@@ -82,7 +82,7 @@ fun getBottomNavItemsForRole(userRole: String): List<BottomNavItem> {
         else -> listOf( // Default: EV Owner
             BottomNavItem.OwnerHome,
             BottomNavItem.OwnerMap,
-            BottomNavItem.OwnerVehicles,
+            BottomNavItem.OwnerBooking,
             BottomNavItem.OwnerProfile
         )
     }
