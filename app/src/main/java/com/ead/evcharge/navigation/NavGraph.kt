@@ -14,7 +14,6 @@ import androidx.navigation.compose.rememberNavController
 import com.ead.evcharge.data.local.TokenManager
 import com.ead.evcharge.ui.operator.*
 import com.ead.evcharge.ui.owner.*
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainNavGraph(
@@ -86,14 +85,17 @@ fun MainNavGraph(
             composable(Screen.OwnerHome.route) {
                 OwnerHomeScreen(
                     tokenManager = tokenManager,
+                    navController = navController,
                     onLogout = onLogout
                 )
             }
             composable(Screen.OwnerMap.route) {
                 OwnerMapScreen()
             }
-            composable(Screen.OwnerVehicles.route) {
-                OwnerVehiclesScreen()
+            composable(Screen.OwnerBooking.route) {
+                OwnerBookingScreen(
+                    tokenManager = tokenManager
+                )
             }
             composable(Screen.OwnerProfile.route) {
                 OwnerProfileScreen(

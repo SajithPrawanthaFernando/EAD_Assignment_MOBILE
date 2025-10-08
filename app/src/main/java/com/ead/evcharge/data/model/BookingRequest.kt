@@ -6,8 +6,3 @@ data class BookingRequest(
     val slotId: String,
     val startTimeUtc: String
 )
-
-data class BookingResponse(
-    val bookingId: String?,
-    val message: String?
-)
