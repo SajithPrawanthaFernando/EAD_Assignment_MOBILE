@@ -92,6 +92,8 @@ dependencies {
     // Optional: For location services
     implementation("com.google.android.gms:play-services-location:21.3.0")
 
+    implementation("com.google.zxing:core:3.5.2")
+
     // Room Database
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")

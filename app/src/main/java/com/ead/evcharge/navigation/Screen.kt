@@ -13,6 +13,6 @@ sealed class Screen(val route: String) {
     // EV Owner screens
     object OwnerHome : Screen("owner_home")
     object OwnerMap : Screen("owner_map")
-    object OwnerVehicles : Screen("owner_vehicles")
+    object OwnerBooking : Screen("owner_booking")
     object OwnerProfile : Screen("owner_profile")
 }

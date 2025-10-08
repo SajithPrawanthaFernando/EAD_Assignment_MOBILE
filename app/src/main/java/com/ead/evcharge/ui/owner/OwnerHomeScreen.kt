@@ -18,22 +18,34 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavHostController
+import com.ead.evcharge.data.local.AppDatabase
 import com.ead.evcharge.data.local.TokenManager
+import com.ead.evcharge.data.remote.RetrofitInstance
+import com.ead.evcharge.data.repository.BookingRepository
 import kotlinx.coroutines.flow.first
-import java.util.Calendar
+import java.text.SimpleDateFormat
+import java.util.*
+import com.ead.evcharge.navigation.Screen
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import com.ead.evcharge.utils.QRCodeGenerator
 
-// Dummy data model for bookings
+
+// Data model for bookings UI
 data class BookingData(
     val id: String,
     val stationName: String,
-    val location: String,
+    val date: String,
     val startTime: String,
     val endTime: String,
     val status: String,
     val chargingStatus: Int,
-    val vehicleName: String
+    val slotLabel: String
 )
 
 fun getGreetingMessage(): String {
@@ -46,57 +58,100 @@ fun getGreetingMessage(): String {
     }
 }
 
+fun formatTime(isoString: String): String {
+    return try {
+        val inputFormatWithMillis = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault())
+        inputFormatWithMillis.timeZone = TimeZone.getTimeZone("UTC")
+
+        val date = try {
+            inputFormatWithMillis.parse(isoString)
+        } catch (e: Exception) {
+            val inputFormatNoMillis = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault())
+            inputFormatNoMillis.timeZone = TimeZone.getTimeZone("UTC")
+            inputFormatNoMillis.parse(isoString)
+        }
+
+        val outputFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
+        outputFormat.format(date ?: Date())
+    } catch (e: Exception) {
+        println("Error parsing time: ${e.message}")
+        "N/A"
+    }
+}
+
+fun formatDate2(isoString: String): String {
+    return try {
+        val inputFormatWithMillis = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault())
+        inputFormatWithMillis.timeZone = TimeZone.getTimeZone("UTC")
+
+        val date = try {
+            inputFormatWithMillis.parse(isoString)
+        } catch (e: Exception) {
+            val inputFormatNoMillis = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault())
+            inputFormatNoMillis.timeZone = TimeZone.getTimeZone("UTC")
+            inputFormatNoMillis.parse(isoString)
+        }
+
+        val outputFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+        outputFormat.format(date ?: Date())
+    } catch (e: Exception) {
+        println("Error parsing date: ${e.message}")
+        "N/A"
+    }
+}
+
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OwnerHomeScreen(
     tokenManager: TokenManager,
+    navController: NavHostController,
     onLogout: () -> Unit
 ) {
+    val context = LocalContext.current
     var userName by remember { mutableStateOf("") }
     var userEmail by remember { mutableStateOf("") }
     val greeting = remember { getGreetingMessage() }
 
-    LaunchedEffect(Unit) {
-        userName = tokenManager.getUserEmail().first() ?: "User"
-        userEmail = tokenManager.getUserEmail().first() ?: ""
+    val userNic by tokenManager.getUserNic().collectAsState(initial = null)
+    val safeNic = userNic ?: ""
+
+    val database = remember { AppDatabase.getDatabase(context) }
+    val bookingRepository = remember {
+        BookingRepository(database.bookingDao(), RetrofitInstance.api)
     }
 
-    // Dummy ongoing bookings data
-    val ongoingBookings = listOf(
-        BookingData(
-            id = "B001",
-            stationName = "Central Charging Hub",
-            location = "123 Main Street, Downtown",
-            startTime = "02:30 PM",
-            endTime = "04:30 PM",
-            status = "Charging",
-            chargingStatus = 65,
-            vehicleName = "Tesla Model 3"
-        ),
-        BookingData(
-            id = "B002",
-            stationName = "Mall Parking Station",
-            location = "456 Shopping Center",
-            startTime = "03:00 PM",
-            endTime = "05:00 PM",
-            status = "Reserved",
-            chargingStatus = 0,
-            vehicleName = "Nissan Leaf"
-        ),
-        BookingData(
-            id = "B003",
-            stationName = "Airport Fast Charge",
-            location = "789 Airport Road",
-            startTime = "01:00 PM",
-            endTime = "02:00 PM",
-            status = "Charging",
-            chargingStatus = 85,
-            vehicleName = "BMW i4"
-        )
-    )
+    val bookingsFromDb by bookingRepository.getBookings(safeNic).collectAsState(initial = emptyList())
 
-    Scaffold(
-    ) { padding ->
+    LaunchedEffect(userNic) {
+        userName = tokenManager.getUserEmail().first() ?: "User"
+        userEmail = tokenManager.getUserEmail().first() ?: ""
+
+        if (!userNic.isNullOrEmpty()) {
+            bookingRepository.syncBookings(userNic!!)
+        }
+    }
+
+    val ongoingBookings = bookingsFromDb
+        .filter { booking ->
+            booking.status.equals("Pending", ignoreCase = true) ||
+                    booking.status.equals("Approved", ignoreCase = true) ||
+                    booking.status.equals("Charging", ignoreCase = true)
+        }
+        .map { booking ->
+            BookingData(
+                id = booking.id,
+                stationName = booking.stationName,
+                date = formatDate2(booking.startTimeUtc),
+                startTime = formatTime(booking.startTimeUtc),
+                endTime = "",
+                status = booking.status,
+                chargingStatus = if (booking.status.equals("Charging", ignoreCase = true)) 65 else 0,
+                slotLabel = booking.slotLabel
+            )
+        }
+
+    Scaffold {padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -115,13 +170,6 @@ fun OwnerHomeScreen(
                     color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
                     fontWeight = FontWeight.Medium
                 )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = userName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
             }
 
             // Scrollable Content
@@ -134,12 +182,25 @@ fun OwnerHomeScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 // Ongoing Bookings Section
-                Text(
-                    text = "Ongoing Bookings",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "My Bookings",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (ongoingBookings.isNotEmpty()) {
+                        Text(
+                            text = "${ongoingBookings.size} active",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -152,45 +213,12 @@ fun OwnerHomeScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 // Quick Booking Section
-                QuickBookingSection()
+                QuickBookingSection(navController = navController)
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Quick Actions Card
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            "Quick Actions",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        QuickActionItem(
-                            icon = Icons.Default.Search,
-                            text = "Find nearby charging stations"
-                        )
-                        QuickActionItem(
-                            icon = Icons.Default.DateRange,
-                            text = "Book charging slots"
-                        )
-                        QuickActionItem(
-                            icon = Icons.Default.List,
-                            text = "Manage your vehicles"
-                        )
-                        QuickActionItem(
-                            icon = Icons.Default.AccountCircle,
-                            text = "Track charging history"
-                        )
-                    }
-                }
+                // Tips & Info Card
+                TipsInfoCard()
 
                 Spacer(modifier = Modifier.height(24.dp))
             }
@@ -198,8 +226,64 @@ fun OwnerHomeScreen(
     }
 }
 
+// Simple Tips & Info Card
 @Composable
-fun QuickBookingSection() {
+fun TipsInfoCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        ),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    "Quick Tips",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            TipItem("📍 Find nearby stations using the map")
+            TipItem("⚡ Book slots in advance for convenience")
+            TipItem("📱 Show QR code when you arrive")
+            TipItem("🔔 Get notified when charging is complete")
+        }
+    }
+}
+
+@Composable
+fun TipItem(text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSecondaryContainer
+        )
+    }
+}
+
+@Composable
+fun QuickBookingSection(navController: NavHostController) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -242,7 +326,15 @@ fun QuickBookingSection() {
             Spacer(modifier = Modifier.height(20.dp))
 
             Button(
-                onClick = { /* Navigate to booking/map screen */ },
+                onClick = {
+                    navController.navigate(Screen.OwnerMap.route) {
+                        popUpTo(Screen.OwnerHome.route) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -263,53 +355,6 @@ fun QuickBookingSection() {
                     fontWeight = FontWeight.SemiBold
                 )
             }
-        }
-    }
-}
-
-@Composable
-fun QuickBookingOption(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = modifier
-            .height(90.dp)
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(28.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            )
         }
     }
 }
@@ -356,11 +401,100 @@ fun BookingCarousel(bookings: List<BookingData>) {
 }
 
 @Composable
+fun QRCodeDialog(
+    bookingId: String,
+    stationName: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val qrBitmap = remember(bookingId) {
+        QRCodeGenerator.generateQRCode(bookingId, 512)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "Booking QR Code",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    stationName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                qrBitmap?.let { bitmap ->
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Booking QR Code",
+                        modifier = Modifier
+                            .size(300.dp)
+                            .padding(16.dp)
+                            .background(Color.White, RoundedCornerShape(12.dp))
+                            .padding(16.dp)
+                    )
+                } ?: run {
+                    CircularProgressIndicator()
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    "Booking ID:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    bookingId,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    "Scan this code at the charging station",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
 fun BookingCard(booking: BookingData) {
+    var showQRCode by remember { mutableStateOf(false) }
+
+    val statusColor = when (booking.status.lowercase()) {
+        "charging" -> Color(0xFF4CAF50)
+        "pending" -> Color(0xFFFFA726)
+        "approved" -> Color(0xFF66BB6A)
+        "completed" -> Color(0xFF64B5F6)
+        "cancelled" -> Color(0xFFE57373)
+        else -> Color(0xFF9E9E9E)
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(200.dp),
+            .height(220.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
         ),
@@ -384,19 +518,20 @@ fun BookingCard(booking: BookingData) {
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
+                    // Date display
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(top = 4.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.LocationOn,
+                            imageVector = Icons.Default.DateRange,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(14.dp),
                             tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = booking.location,
+                            text = booking.date,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                         )
@@ -404,10 +539,7 @@ fun BookingCard(booking: BookingData) {
                 }
 
                 Surface(
-                    color = if (booking.status == "Charging")
-                        Color(0xFF4CAF50)
-                    else
-                        Color(0xFFFFA726),
+                    color = statusColor,
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
@@ -428,19 +560,19 @@ fun BookingCard(booking: BookingData) {
             ) {
                 InfoItem(
                     icon = Icons.Default.List,
-                    label = "Vehicle",
-                    value = booking.vehicleName
+                    label = "Slot",
+                    value = booking.slotLabel
                 )
                 InfoItem(
-                    icon = Icons.Default.DateRange,
+                    icon = Icons.Default.Star,
                     label = "Time",
-                    value = "${booking.startTime} - ${booking.endTime}"
+                    value = booking.startTime
                 )
             }
 
             Spacer(modifier = Modifier.weight(1f))
 
-            if (booking.status == "Charging") {
+            if (booking.status.equals("Charging", ignoreCase = true)) {
                 Column {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -469,10 +601,36 @@ fun BookingCard(booking: BookingData) {
                         trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
                     )
                 }
+            } else {
+                Button(
+                    onClick = { showQRCode = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Show QR Code", style = MaterialTheme.typography.labelMedium)
+                }
             }
         }
     }
+
+    if (showQRCode) {
+        QRCodeDialog(
+            bookingId = booking.id,
+            stationName = booking.stationName,
+            onDismiss = { showQRCode = false }
+        )
+    }
 }
+
 
 @Composable
 fun InfoItem(
@@ -529,7 +687,7 @@ fun NoBookingsCard() {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "No Ongoing Bookings",
+                text = "No Active Bookings",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -539,31 +697,5 @@ fun NoBookingsCard() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
         }
-    }
-}
-
-@Composable
-fun QuickActionItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    text: String
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.onSecondaryContainer
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSecondaryContainer
-        )
     }
 }

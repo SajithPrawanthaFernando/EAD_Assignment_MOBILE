@@ -7,6 +7,8 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,10 +29,12 @@ import com.ead.evcharge.data.remote.RetrofitInstance
 import com.ead.evcharge.data.repository.StationRepository
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
 import kotlinx.coroutines.launch
+import kotlin.math.pow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,11 +53,6 @@ fun OwnerMapScreen() {
     // Get stations from database
     val stations by stationRepository.getActiveStations().collectAsState(initial = emptyList())
 
-    // Sync stations on first load
-    LaunchedEffect(Unit) {
-        stationRepository.syncStationsFromServer()
-    }
-
     // State variables
     var hasLocationPermission by remember { mutableStateOf(false) }
     var currentLocation by remember { mutableStateOf<LatLng?>(null) }
@@ -61,6 +60,31 @@ fun OwnerMapScreen() {
     var selectedStation by remember { mutableStateOf<StationEntity?>(null) }
     var showBookingDialog by remember { mutableStateOf(false) }
     var bookingStation by remember { mutableStateOf<StationEntity?>(null) }
+
+    // NEW: Nearby mode states
+    var isNearbyModeEnabled by remember { mutableStateOf(true) }
+    var showLegend by remember { mutableStateOf(false) }
+    var nearbyStationIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var searchRadius by remember { mutableStateOf(20.0) }
+    var pulseRadius by remember { mutableStateOf(50.0) }
+
+    // NEW: Calculate distances and categorize stations
+    val stationsWithDistance = remember(stations, currentLocation, isNearbyModeEnabled, nearbyStationIds) {
+        if (isNearbyModeEnabled && currentLocation != null) {
+            stations.map { station ->
+                val distance = stationRepository.calculateDistance(
+                    currentLocation!!.latitude,
+                    currentLocation!!.longitude,
+                    station.lat,
+                    station.lng
+                )
+                val isNearby = nearbyStationIds.contains(station.id)
+                Triple(station, distance, isNearby)
+            }.sortedBy { it.second }
+        } else {
+            stations.map { Triple(it, null, false) }
+        }
+    }
 
     // Request location permission
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -70,6 +94,7 @@ fun OwnerMapScreen() {
                 permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
     }
 
+    // Sync stations on first load
     LaunchedEffect(Unit) {
         locationPermissionLauncher.launch(
             arrayOf(
@@ -77,9 +102,10 @@ fun OwnerMapScreen() {
                 Manifest.permission.ACCESS_COARSE_LOCATION
             )
         )
+        stationRepository.syncStationsFromServer()
     }
 
-    // Get current location function
+    // UPDATED: Get current location function with nearby API
     fun getCurrentLocation(onLocationReceived: (LatLng) -> Unit) {
         try {
             if (!hasLocationPermission) {
@@ -92,7 +118,30 @@ fun OwnerMapScreen() {
                 .addOnSuccessListener { location ->
                     if (location != null) {
                         val latLng = LatLng(location.latitude, location.longitude)
+                        currentLocation = latLng
                         onLocationReceived(latLng)
+
+                        // NEW: Fetch nearby stations if mode is enabled
+                        if (isNearbyModeEnabled) {
+                            scope.launch {
+                                isSyncing = true
+                                val result = stationRepository.getNearbyStationIds(
+                                    latitude = location.latitude,
+                                    longitude = location.longitude,
+                                    radiusKm = searchRadius
+                                )
+                                isSyncing = false
+
+                                if (result.isSuccess) {
+                                    nearbyStationIds = result.getOrNull() ?: emptySet()
+                                    Toast.makeText(
+                                        context,
+                                        "Found ${nearbyStationIds.size} stations within ${searchRadius.toInt()}km",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        }
                     } else {
                         Toast.makeText(context, "Unable to get location", Toast.LENGTH_SHORT).show()
                     }
@@ -108,17 +157,42 @@ fun OwnerMapScreen() {
         position = CameraPosition.fromLatLngZoom(defaultLocation, 13f)
     }
 
+    // NEW: Animate the pulse effect
+    LaunchedEffect(currentLocation) {
+        if (currentLocation != null) {
+            while (true) {
+                animate(
+                    initialValue = 50f,
+                    targetValue = 150f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(2000, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    )
+                ) { value, _ ->
+                    pulseRadius = value.toDouble()
+                }
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Find Charging Stations")
+                        Text(if (isNearbyModeEnabled) "Nearby & All Stations" else "Find Charging Stations")
                         if (stations.isNotEmpty()) {
-                            Text(
-                                "${stations.size} stations available",
-                                style = MaterialTheme.typography.bodySmall
-                            )
+                            if (isNearbyModeEnabled && nearbyStationIds.isNotEmpty()) {
+                                Text(
+                                    "${nearbyStationIds.size} nearby • ${stations.size} total",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            } else {
+                                Text(
+                                    "${stations.size} stations available",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
                         }
                     }
                 },
@@ -127,6 +201,17 @@ fun OwnerMapScreen() {
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    // NEW: Legend button
+                    if (isNearbyModeEnabled) {
+                        IconButton(onClick = { showLegend = !showLegend }) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "Legend",
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                    }
+
                     IconButton(
                         onClick = {
                             scope.launch {
@@ -174,7 +259,7 @@ fun OwnerMapScreen() {
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
                 properties = MapProperties(
-                    isMyLocationEnabled = hasLocationPermission,
+                    isMyLocationEnabled = false,  // Changed to false for custom marker
                     mapType = MapType.NORMAL
                 ),
                 uiSettings = MapUiSettings(
@@ -184,12 +269,61 @@ fun OwnerMapScreen() {
                 ),
                 onMapClick = { selectedStation = null }
             ) {
-                // Add markers for each charging station
-                stations.forEach { station ->
+                // NEW: Calculate dynamic circle size based on zoom
+                val currentZoom = cameraPositionState.position.zoom
+                val baseRadius = 100.0 * 2.0.pow(15.0 - currentZoom)
+                val animatedPulseRadius = baseRadius * (pulseRadius / 100.0)
+
+                // NEW: Custom pulsing location circles (no marker)
+                currentLocation?.let { location ->
+                    Circle(
+                        center = location,
+                        radius = animatedPulseRadius,
+                        fillColor = Color(0x20E91E63),
+                        strokeColor = Color(0xFFE91E63),
+                        strokeWidth = 3f,
+                        zIndex = 999f
+                    )
+
+                    Circle(
+                        center = location,
+                        radius = baseRadius * 0.4,
+                        fillColor = Color(0x40E91E63),
+                        strokeColor = Color(0xFFF48FB1),
+                        strokeWidth = 2f,
+                        zIndex = 999f
+                    )
+                }
+
+                // UPDATED: Add markers for each charging station with distance colors
+                stationsWithDistance.forEach { (station, distance, isNearby) ->
+                    val markerColor = if (isNearbyModeEnabled && isNearby) {
+                        when {
+                            distance == null -> BitmapDescriptorFactory.HUE_VIOLET
+                            distance < 5.0 -> BitmapDescriptorFactory.HUE_GREEN
+                            distance < 10.0 -> BitmapDescriptorFactory.HUE_AZURE
+                            distance < 20.0 -> BitmapDescriptorFactory.HUE_ORANGE
+                            else -> BitmapDescriptorFactory.HUE_RED
+                        }
+                    } else {
+                        if (isNearbyModeEnabled) {
+                            BitmapDescriptorFactory.HUE_VIOLET
+                        } else {
+                            BitmapDescriptorFactory.HUE_RED
+                        }
+                    }
+
                     Marker(
                         state = MarkerState(position = LatLng(station.lat, station.lng)),
                         title = station.name,
-                        snippet = "${station.slots.count { it.available }}/${station.slots.size} available • ${station.type}",
+                        snippet = buildString {
+                            if (distance != null && isNearbyModeEnabled) {
+                                append("%.1f km away • ".format(distance))
+                            }
+                            append("${station.slots.count { it.available }}/${station.slots.size} available • ${station.type}")
+                        },
+                        icon = BitmapDescriptorFactory.defaultMarker(markerColor),
+                        alpha = if (isNearbyModeEnabled && !isNearby) 0.5f else 1.0f,
                         onClick = {
                             selectedStation = station
                             scope.launch {
@@ -203,14 +337,6 @@ fun OwnerMapScreen() {
                             }
                             true
                         }
-                    )
-                }
-
-                // Current location marker
-                currentLocation?.let { location ->
-                    Marker(
-                        state = MarkerState(position = location),
-                        title = "You are here"
                     )
                 }
             }
@@ -258,41 +384,117 @@ fun OwnerMapScreen() {
                 }
             }
 
-            // My Location Button
-            FloatingActionButton(
-                onClick = {
-                    if (hasLocationPermission) {
-                        getCurrentLocation { location ->
-                            currentLocation = location
-                            scope.launch {
-                                cameraPositionState.animate(
-                                    CameraUpdateFactory.newLatLngZoom(location, 15f),
-                                    1000
-                                )
-                            }
-                            Toast.makeText(context, "Moved to your location", Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
-                        locationPermissionLauncher.launch(
-                            arrayOf(
-                                Manifest.permission.ACCESS_FINE_LOCATION,
-                                Manifest.permission.ACCESS_COARSE_LOCATION
-                            )
-                        )
-                    }
-                },
+            // UPDATED: Bottom controls with nearby toggle
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(16.dp),
-                containerColor = MaterialTheme.colorScheme.primary
+                    .padding(16.dp)
             ) {
-                Icon(Icons.Default.LocationOn, "My Location", tint = MaterialTheme.colorScheme.onPrimary)
+                // NEW: Toggle nearby mode button
+                FloatingActionButton(
+                    onClick = {
+                        isNearbyModeEnabled = !isNearbyModeEnabled
+                        if (isNearbyModeEnabled && hasLocationPermission && currentLocation != null) {
+                            Toast.makeText(context, "Nearby mode enabled", Toast.LENGTH_SHORT).show()
+                        } else {
+                            nearbyStationIds = emptySet()
+                            Toast.makeText(context, "Showing all stations", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    containerColor = if (isNearbyModeEnabled)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isNearbyModeEnabled) Icons.Default.LocationOn else Icons.Default.Place,
+                        contentDescription = "Toggle Nearby Mode",
+                        tint = if (isNearbyModeEnabled)
+                            MaterialTheme.colorScheme.onPrimary
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // My Location Button
+                FloatingActionButton(
+                    onClick = {
+                        if (hasLocationPermission) {
+                            getCurrentLocation { location ->
+                                scope.launch {
+                                    cameraPositionState.animate(
+                                        CameraUpdateFactory.newLatLngZoom(location, 15f),
+                                        1000
+                                    )
+                                }
+                                Toast.makeText(context, "Moved to your location", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        }
+                    },
+                    modifier = Modifier.size(56.dp),
+                    containerColor = MaterialTheme.colorScheme.secondary
+                ) {
+                    Icon(Icons.Default.MyLocation, "My Location", tint = MaterialTheme.colorScheme.onSecondary)
+                }
             }
 
-            // Station details card
+            // NEW: Legend card
+            if (showLegend && isNearbyModeEnabled) {
+                Card(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(16.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Distance Legend",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            IconButton(
+                                onClick = { showLegend = false },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.Close, "Close", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LegendItem(Color(0xFF4CAF50), "< 5 km")
+                        LegendItem(Color(0xFF2196F3), "5-10 km")
+                        LegendItem(Color(0xFFFFA726), "10-20 km")
+                        LegendItem(Color(0xFFF44336), "> 20 km")
+                        LegendItem(Color(0xFF9C27B0), "Other stations")
+                    }
+                }
+            }
+
+            // UPDATED: Station details card with distance
             selectedStation?.let { station ->
+                val stationData = stationsWithDistance.find { it.first.id == station.id }
+                val distance = stationData?.second
+                val isNearby = stationData?.third ?: false
+
                 RealStationDetailsCard(
                     station = station,
+                    distance = distance,
+                    isNearby = isNearby && isNearbyModeEnabled,
                     onDismiss = { selectedStation = null },
                     onNavigate = {
                         val uri = Uri.parse("google.navigation:q=${station.lat},${station.lng}")
@@ -340,7 +542,6 @@ fun OwnerMapScreen() {
                             Toast.makeText(context, "Booking confirmed!", Toast.LENGTH_LONG).show()
                             showBookingDialog = false
                             bookingStation = null
-                            // Refresh stations to update availability
                             stationRepository.syncStationsFromServer()
                         } else {
                             Toast.makeText(
@@ -362,9 +563,32 @@ fun OwnerMapScreen() {
     }
 }
 
+// NEW: Legend item composable
+@Composable
+fun LegendItem(color: Color, label: String) {
+    Row(
+        modifier = Modifier.padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(16.dp)
+                .background(color, shape = RoundedCornerShape(8.dp))
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+}
+
+// UPDATED: Station details card with distance parameter
 @Composable
 fun RealStationDetailsCard(
     station: StationEntity,
+    distance: Double? = null,
+    isNearby: Boolean = false,
     onDismiss: () -> Unit,
     onNavigate: () -> Unit,
     onBook: () -> Unit
@@ -386,7 +610,6 @@ fun RealStationDetailsCard(
             shape = RoundedCornerShape(20.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -413,6 +636,28 @@ fun RealStationDetailsCard(
                                     color = Color.White
                                 )
                             }
+
+                            // NEW: Show distance badge
+                            if (distance != null) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    color = when {
+                                        !isNearby -> Color(0xFF9C27B0)
+                                        distance < 5.0 -> Color(0xFF4CAF50)
+                                        distance < 10.0 -> Color(0xFF2196F3)
+                                        distance < 20.0 -> Color(0xFFFFA726)
+                                        else -> Color(0xFFF44336)
+                                    },
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "%.1f km".format(distance),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -423,7 +668,6 @@ fun RealStationDetailsCard(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Station info
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -442,7 +686,6 @@ fun RealStationDetailsCard(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Action buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
