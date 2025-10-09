@@ -6,6 +6,7 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.GET
 import retrofit2.http.Path
+import retrofit2.http.Header
 import com.ead.evcharge.data.model.LoginRequest
 import com.ead.evcharge.data.model.LoginResponse
 import com.ead.evcharge.data.model.SignupRequest
@@ -14,6 +15,9 @@ import com.ead.evcharge.data.model.UserResponse
 import com.ead.evcharge.data.model.StationResponse
 import com.ead.evcharge.data.model.BookingRequest
 import com.ead.evcharge.data.model.BookingResponse
+import com.ead.evcharge.data.model.VerifyQrRequest
+import com.ead.evcharge.data.model.VerifyQrResponse
+import com.ead.evcharge.data.model.BookingDetailsResponse
 
 interface ApiService {
     @POST("/api/auth/login")
@@ -31,4 +35,27 @@ interface ApiService {
 
     @POST("/api/bookings")
     suspend fun createBooking(@Body request: BookingRequest): Response<BookingResponse>
+
+    @POST("/api/qr/verify")
+    suspend fun verifyQr(
+        @Header("Authorization") token: String,
+        @Body body: VerifyQrRequest
+    ): Response<VerifyQrResponse>
+
+    @POST("api/qr/bookings/{bookingId}/finalize")
+    suspend fun finalizeBooking(
+        @Header("Authorization") token: String,
+        @Path("bookingId") bookingId: String
+    ): Response<Unit>
+
+    @GET("api/bookings/{id}")
+    suspend fun getBookingDetails(
+        @Header("Authorization") token: String,
+        @Path("id") bookingId: String
+    ): Response<BookingDetailsResponse>
+
+    @GET("api/bookings")
+    suspend fun getAllBookings(
+        @Header("Authorization") token: String
+    ): Response<List<BookingDetailsResponse>>
 }

@@ -9,13 +9,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import com.ead.evcharge.data.local.TokenManager
 import kotlinx.coroutines.flow.first
+import com.ead.evcharge.navigation.Screen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OperatorHomeScreen(
     tokenManager: TokenManager,
+    navController: NavController,
     onLogout: () -> Unit
 ) {
     var userName by remember { mutableStateOf("") }
@@ -54,6 +57,7 @@ fun OperatorHomeScreen(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // --- Welcome Section ---
             Text(
                 text = "Welcome, $userName",
                 style = MaterialTheme.typography.headlineMedium,
@@ -68,6 +72,7 @@ fun OperatorHomeScreen(
             )
             Spacer(modifier = Modifier.height(32.dp))
 
+            // --- Features Card ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -87,6 +92,24 @@ fun OperatorHomeScreen(
                     Text("• Revenue tracking")
                     Text("• Maintenance scheduling")
                 }
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // --- Scan QR Button ---
+            Button(
+                onClick = { navController.navigate(Screen.OperatorQrScanner.route) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(55.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Text(
+                    text = "Scan QR to Verify Booking",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
             }
         }
     }
