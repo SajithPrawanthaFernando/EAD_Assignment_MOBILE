@@ -59,7 +59,13 @@ fun OperatorHomeScreen(
         ) {
             // --- Welcome Section ---
             Text(
-                text = "Welcome, $userName",
+                text = "Welcome",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = userName,
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary

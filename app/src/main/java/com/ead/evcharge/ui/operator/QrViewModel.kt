@@ -4,24 +4,22 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ead.evcharge.data.local.TokenManager
 import com.ead.evcharge.data.model.BookingDetailsResponse
-import com.ead.evcharge.data.model.VerifyQrRequest
-import com.ead.evcharge.data.model.VerifyQrResponse
 import com.ead.evcharge.data.remote.RetrofitInstance
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
+// UI State definitions
 sealed class QrUiState {
     object Idle : QrUiState()
     object Loading : QrUiState()
-    data class Success(val data: VerifyQrResponse) : QrUiState()
     data class SuccessMessage(val message: String) : QrUiState()
     data class Error(val message: String) : QrUiState()
     data class BookingDetails(val data: BookingDetailsResponse) : QrUiState()
-    data class TodayBookings(val data: List<BookingDetailsResponse>) : QrUiState()
 }
 
+// ViewModel
 class QrViewModel(
     private val tokenManager: TokenManager
 ) : ViewModel() {
@@ -31,42 +29,63 @@ class QrViewModel(
 
     private val apiService = RetrofitInstance.api
 
-    fun verifyQrToken(scannedToken: String) {
+
+    // Fetch booking details by ID
+    fun loadBookingDetails(bookingId: String) {
         viewModelScope.launch {
+            _uiState.value = QrUiState.Loading
             try {
-                _uiState.value = QrUiState.Loading
-                val token = "Bearer ${tokenManager.getToken()}"
-                val response = RetrofitInstance.api.verifyQr(
-                    token,
-                    VerifyQrRequest(token = scannedToken)
-                )
+                val token = "Bearer ${tokenManager.getToken().first()}"
+                val response = apiService.getBookingDetails(bookingId)
 
                 if (response.isSuccessful && response.body() != null) {
-                    _uiState.value = QrUiState.Success(response.body()!!)
+                    _uiState.value = QrUiState.BookingDetails(response.body()!!)
                 } else {
-                    _uiState.value = QrUiState.Error("Invalid or expired QR code")
+                    _uiState.value = QrUiState.Error(
+                        "Failed to fetch booking details (${response.code()} ${response.message()})"
+                    )
                 }
             } catch (e: Exception) {
-                _uiState.value = QrUiState.Error("Network error: ${e.message}")
+                _uiState.value = QrUiState.Error(
+                    e.localizedMessage ?: "Error loading booking details"
+                )
             }
         }
     }
 
-    fun reset() {
-        _uiState.value = QrUiState.Idle
+
+    // Start charging booking
+    fun startCharging(bookingId: String) {
+        viewModelScope.launch {
+            _uiState.value = QrUiState.Loading
+            try {
+                val token = "Bearer ${tokenManager.getToken().first()}"
+                val response = apiService.startCharging(bookingId)
+                if (response.isSuccessful) {
+                    _uiState.value = QrUiState.SuccessMessage("Charging started successfully.")
+                    loadBookingDetails(bookingId)
+                } else {
+                    _uiState.value = QrUiState.Error("Failed to start charging (${response.code()})")
+                }
+            } catch (e: Exception) {
+                _uiState.value = QrUiState.Error(e.localizedMessage ?: "Error starting charging")
+            }
+        }
     }
 
+
+    // Finalize (complete) booking
     fun finalizeBooking(bookingId: String) {
         viewModelScope.launch {
             _uiState.value = QrUiState.Loading
             try {
-                val token = "Bearer " + tokenManager.getToken().first()
-                val response = apiService.finalizeBooking(token, bookingId)
-
+                val token = "Bearer ${tokenManager.getToken().first()}"
+                val response = apiService.completeBooking(bookingId)
                 if (response.isSuccessful) {
-                    _uiState.value = QrUiState.SuccessMessage("Booking finalized successfully")
+                    _uiState.value = QrUiState.SuccessMessage("Booking finalized successfully.")
+                    loadBookingDetails(bookingId)
                 } else {
-                    _uiState.value = QrUiState.Error("Failed to finalize booking")
+                    _uiState.value = QrUiState.Error("Failed to finalize booking (${response.code()})")
                 }
             } catch (e: Exception) {
                 _uiState.value = QrUiState.Error(e.localizedMessage ?: "Error finalizing booking")
@@ -74,46 +93,9 @@ class QrViewModel(
         }
     }
 
-    fun loadBookingDetails(bookingId: String) {
-        viewModelScope.launch {
-            _uiState.value = QrUiState.Loading
-            try {
-                val token = "Bearer ${tokenManager.getToken().first()}"
-                val response = apiService.getBookingDetails(token, bookingId)
 
-                if (response.isSuccessful && response.body() != null) {
-                    _uiState.value = QrUiState.BookingDetails(response.body()!!)
-                } else {
-                    _uiState.value = QrUiState.Error("Failed to fetch booking details")
-                }
-            } catch (e: Exception) {
-                _uiState.value = QrUiState.Error(e.localizedMessage ?: "Error loading booking details")
-            }
-        }
+    // Reset UI state
+    fun reset() {
+        _uiState.value = QrUiState.Idle
     }
-
-    fun loadTodayBookings() {
-        viewModelScope.launch {
-            _uiState.value = QrUiState.Loading
-            try {
-                val token = "Bearer ${tokenManager.getToken().first()}"
-                val response = apiService.getAllBookings(token)
-                if (response.isSuccessful && response.body() != null) {
-                    // Filter to today’s bookings (simple UTC check)
-                    val today = java.time.LocalDate.now()
-                    val todayBookings = response.body()!!.filter {
-                        java.time.Instant.parse(it.startTimeUtc)
-                            .atZone(java.time.ZoneOffset.UTC)
-                            .toLocalDate() == today
-                    }
-                    _uiState.value = QrUiState.TodayBookings(todayBookings)
-                } else {
-                    _uiState.value = QrUiState.Error("Failed to load bookings")
-                }
-            } catch (e: Exception) {
-                _uiState.value = QrUiState.Error(e.localizedMessage ?: "Error loading bookings")
-            }
-        }
-    }
-
 }

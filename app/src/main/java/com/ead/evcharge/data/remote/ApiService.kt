@@ -18,6 +18,7 @@ import com.ead.evcharge.data.model.BookingResponse
 import com.ead.evcharge.data.model.VerifyQrRequest
 import com.ead.evcharge.data.model.VerifyQrResponse
 import com.ead.evcharge.data.model.BookingDetailsResponse
+import retrofit2.http.PATCH
 
 interface ApiService {
     @POST("/api/auth/login")
@@ -36,26 +37,19 @@ interface ApiService {
     @POST("/api/bookings")
     suspend fun createBooking(@Body request: BookingRequest): Response<BookingResponse>
 
-    @POST("/api/qr/verify")
-    suspend fun verifyQr(
-        @Header("Authorization") token: String,
-        @Body body: VerifyQrRequest
-    ): Response<VerifyQrResponse>
-
-    @POST("api/qr/bookings/{bookingId}/finalize")
-    suspend fun finalizeBooking(
-        @Header("Authorization") token: String,
-        @Path("bookingId") bookingId: String
-    ): Response<Unit>
+    @POST("api/qr/verify")
+    suspend fun verifyQr(@Body body: VerifyQrRequest): Response<VerifyQrResponse>
 
     @GET("api/bookings/{id}")
-    suspend fun getBookingDetails(
-        @Header("Authorization") token: String,
-        @Path("id") bookingId: String
-    ): Response<BookingDetailsResponse>
+    suspend fun getBookingDetails(@Path("id") bookingId: String): Response<BookingDetailsResponse>
 
     @GET("api/bookings")
-    suspend fun getAllBookings(
-        @Header("Authorization") token: String
-    ): Response<List<BookingDetailsResponse>>
+    suspend fun getAllBookings(): Response<List<BookingDetailsResponse>>
+
+    @PATCH("api/bookings/{id}/start-charging")
+    suspend fun startCharging(@Path("id") bookingId: String): Response<Unit>
+
+    @PATCH("api/bookings/{id}/complete")
+    suspend fun completeBooking(@Path("id") bookingId: String): Response<Unit>
+
 }

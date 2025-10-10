@@ -70,20 +70,28 @@ fun MainNavGraph(
                 )
             }
             composable(Screen.OperatorStations.route) {
-                OperatorStationsScreen()
+                OperatorStationsScreen(
+                    tokenManager = tokenManager,
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable(Screen.OperatorBookings.route) {
-                OperatorBookingsScreen(tokenManager)
+                OperatorBookingsScreen(
+                    tokenManager = tokenManager,
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable(Screen.OperatorProfile.route) {
                 OperatorProfileScreen(
                     tokenManager = tokenManager,
+                    onBack = { navController.popBackStack() },
                     onLogout = onLogout
                 )
             }
             composable(Screen.OperatorQrScanner.route) {
                 QrScannerScreen(
                     tokenManager = tokenManager,
+                    navController = navController,
                     onBack = { navController.popBackStack() }
                 )
             }
