@@ -1,3 +1,4 @@
+
 // data/repository/BookingRepository.kt
 package com.ead.evcharge.data.repository
 
@@ -53,6 +54,11 @@ class BookingRepository(
             Result.success(bookingDao.getBookingsForOwner(ownerNic).first())
         }
     }
+
+    suspend fun getAllBookings() = apiService.getAllBookings()
+
+    suspend fun getBookingDetails(bookingId: String) =
+            apiService.getBookingDetails(bookingId)
 }
 
 // Extension function to map BookingResponse to BookingEntity

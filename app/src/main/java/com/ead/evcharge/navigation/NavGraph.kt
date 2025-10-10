@@ -6,7 +6,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -65,19 +64,34 @@ fun MainNavGraph(
             composable(Screen.OperatorHome.route) {
                 OperatorHomeScreen(
                     tokenManager = tokenManager,
+                    navController = navController,
                     onLogout = onLogout
                 )
             }
             composable(Screen.OperatorStations.route) {
-                OperatorStationsScreen()
+                OperatorStationsScreen(
+                    tokenManager = tokenManager,
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable(Screen.OperatorBookings.route) {
-                OperatorBookingsScreen()
+                OperatorBookingsScreen(
+                    tokenManager = tokenManager,
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable(Screen.OperatorProfile.route) {
                 OperatorProfileScreen(
                     tokenManager = tokenManager,
+                    onBack = { navController.popBackStack() },
                     onLogout = onLogout
+                )
+            }
+            composable(Screen.OperatorQrScanner.route) {
+                QrScannerScreen(
+                    tokenManager = tokenManager,
+                    navController = navController,
+                    onBack = { navController.popBackStack() }
                 )
             }
 
