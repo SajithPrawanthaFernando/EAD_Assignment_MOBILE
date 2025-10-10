@@ -1,6 +1,8 @@
 package com.ead.evcharge.ui.operator
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -10,9 +12,11 @@ import androidx.compose.ui.unit.dp
 import com.ead.evcharge.data.local.TokenManager
 import kotlinx.coroutines.flow.first
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OperatorProfileScreen(
     tokenManager: TokenManager,
+    onBack: () -> Unit = {}, // allows back navigation
     onLogout: () -> Unit
 ) {
     var userId by remember { mutableStateOf("") }
@@ -27,55 +31,79 @@ fun OperatorProfileScreen(
         userRole = tokenManager.getUserRole().first() ?: "N/A"
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Text(
-            "Operator Profile",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Profile") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary
+                )
             )
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                ProfileRow("User ID:", userId)
-                Divider(modifier = Modifier.padding(vertical = 8.dp))
-                ProfileRow("Name:", userName)
-                Divider(modifier = Modifier.padding(vertical = 8.dp))
-                ProfileRow("Email:", userEmail)
-                Divider(modifier = Modifier.padding(vertical = 8.dp))
-                ProfileRow("Role:", userRole)
-            }
         }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        Button(
-            onClick = onLogout,
+    ) { padding ->
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error
-            )
+                .fillMaxSize()
+                .padding(padding)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Logout", fontWeight = FontWeight.SemiBold)
-        }
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                "Operator Profile",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Profile details card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    ProfileRow("User ID:", userId)
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    ProfileRow("Name:", userName)
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    ProfileRow("Email:", userEmail)
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    ProfileRow("Role:", userRole)
+                }
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Button(
+                onClick = onLogout,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text("Logout", fontWeight = FontWeight.SemiBold)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
     }
 }
 

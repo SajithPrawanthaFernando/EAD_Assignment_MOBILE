@@ -9,6 +9,7 @@ sealed class Screen(val route: String) {
     object OperatorStations : Screen("operator_stations")
     object OperatorBookings : Screen("operator_bookings")
     object OperatorProfile : Screen("operator_profile")
+    object OperatorQrScanner : Screen("operator_qr_scanner")
 
     // EV Owner screens
     object OwnerHome : Screen("owner_home")

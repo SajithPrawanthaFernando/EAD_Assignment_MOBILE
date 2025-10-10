@@ -10,7 +10,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 @SuppressLint("StaticFieldLeak")
 object RetrofitInstance {
-    private const val BASE_URL = "http://10.0.2.2:5244/api/"
+    const val BASE_URL = "http://192.168.1.6:5244/"
 
     private var context: Context? = null
 
