@@ -26,53 +26,53 @@ import com.ead.evcharge.data.model.BookingDetailsResponse
 
 
 interface ApiService {
-    @POST("/api/auth/login")
+    @POST("auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
 
-    @PUT("/api/ev-owners")
+    @PUT("ev-owners")
     suspend fun signup(@Body request: SignupRequest): Response<SignupResponse>
 
-    @GET("/api/ev-owners/{nic}")
+    @GET("ev-owners/{nic}")
     suspend fun getOwnerDetails(@Path("nic") userId: String): Response<UserResponse>
-    @GET("/api/users/{id}")
+    @GET("users/{id}")
     suspend fun getUserDetails(@Path("id") userId: String): Response<UserResponse>
-    @GET("/api/stations")
+    @GET("stations")
     suspend fun getAllStations(): Response<List<StationResponse>>
 
-    @POST("/api/bookings")
+    @POST("bookings")
     suspend fun createBooking(@Body request: BookingRequest): Response<BookingResponse>
 
     @GET("bookings/mine/{ownerNic}/detail")
     suspend fun getBookingsForOwner(@Path("ownerNic") ownerNic: String): Response<List<BookingResponse>>
-    @PATCH("/api/ev-owners/{nic}/deactivate")
+    @PATCH("ev-owners/{nic}/deactivate")
     suspend fun deactivateUser(@Path("nic") userId: String): Response<Unit>
 
-    @GET("/api/ev-owners/{nic}")
+    @GET("ev-owners/{nic}")
     suspend fun getEvOwnerByNic(@Path("nic") nic: String): Response<EvOwnerResponse>
 
-    @PUT("/api/ev-owners")
+    @PUT("ev-owners")
     suspend fun updateEvOwner(@Body request: UpdateEvOwnerRequest): Response<EvOwnerResponse>
 
-    @GET("/api/stations/nearby")
+    @GET("stations/nearby")
     suspend fun getNearbyStations(
         @Query("lat") latitude: Double,
         @Query("lng") longitude: Double,
         @Query("rKm") radiusKm: Double = 10.0
     ): Response<List<NearbyStationResponse>>
 
-    @POST("api/qr/verify")
+    @POST("qr/verify")
     suspend fun verifyQr(@Body body: VerifyQrRequest): Response<VerifyQrResponse>
 
-    @GET("api/bookings/{id}")
+    @GET("bookings/{id}")
     suspend fun getBookingDetails(@Path("id") bookingId: String): Response<BookingDetailsResponse>
 
-    @GET("api/bookings")
+    @GET("bookings")
     suspend fun getAllBookings(): Response<List<BookingDetailsResponse>>
 
-    @PATCH("api/bookings/{id}/start-charging")
+    @PATCH("bookings/{id}/start-charging")
     suspend fun startCharging(@Path("id") bookingId: String): Response<Unit>
 
-    @PATCH("api/bookings/{id}/complete")
+    @PATCH("bookings/{id}/complete")
     suspend fun completeBooking(@Path("id") bookingId: String): Response<Unit>
 
 }
